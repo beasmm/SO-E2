@@ -162,7 +162,7 @@ void* executeRequest(void* arg) {
     size_t num_rows, num_cols, num_coords;
     char* endptr;
     size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
-
+    char buffer[BUFFER_SIZE-10];
 
     switch (getOperation(elements[0])) {
       case OP_CREATE:
@@ -195,15 +195,15 @@ void* executeRequest(void* arg) {
       case OP_SHOW:
         event_id = atoi(elements[1]);
 
-        ret = ems_show(resp, event_id);
+        ret = ems_show(resp, event_id, buffer);
         if (ret != 0) fprintf(stderr, "Failed to show event\n");
-        snprintf(response, sizeof(response), "%d\n", ret);
+        snprintf(response, sizeof(response), "%d|%s\n", ret, buffer);
         break;
 
       case OP_LIST_EVENTS:
-        ret = ems_list_events(resp);
+        ret = ems_list_events(resp, buffer);
         if (ret != 0) fprintf(stderr, "Failed to list events\n");
-        snprintf(response, sizeof(response), "%d\n", ret);
+        snprintf(response, sizeof(response), "%d|%s\n", ret, buffer);
         break;
       
       case OP_WAIT:

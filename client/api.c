@@ -218,31 +218,21 @@ int ems_show(int out_fd, unsigned int event_id) {
   fprintf(stdout, "sent: %s\n", buffer);
 
   memset(buffer, 0, sizeof(buffer));
-  int not_done = 1;
-  while (not_done) {
-    memset(buffer, 0, sizeof(buffer));
-    ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
-    if (!strcmp(buffer, "done\n")) {
-        not_done = 0;
-        break;
-    }
-    else if (command == 0) {
-        fprintf(stderr, "[INFO]: pipe closed\n");
-        break;
-    } else if (command == -1) {
-        fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-        return 1;
-    }
+  ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
+  if (command == 0) {
+      fprintf(stderr, "[INFO]: pipe closed\n");
+      return 1;
+  } else if (command == -1) {
+      fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+      return 1;
+  }
 
-    buffer[command] = 0;
-    // fprintf(stdout, "%s\n", buffer);
-    ssize_t ret = write(out_fd, buffer, strlen(buffer));
-    if (ret < 0) {
-        fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-        return 1;
-    }
-  }  
-
+  buffer[command] = 0;
+  ssize_t ret = write(out_fd, buffer, strlen(buffer));
+  if (ret < 0) {
+    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
+    return 1;
+  }
   return 0;
 }
 
@@ -253,33 +243,21 @@ int ems_list_events(int out_fd) {
   send_msg(req_fd, buffer);
   fprintf(stdout, "sent: %s\n", buffer);
 
-  memset(buffer, 0, sizeof(buffer));
-  read_msg(res_fd, buffer);
+   memset(buffer, 0, sizeof(buffer));
+  ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
+  if (command == 0) {
+      fprintf(stderr, "[INFO]: pipe closed\n");
+      return 1;
+  } else if (command == -1) {
+      fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+      return 1;
+  }
 
-  int not_done = 1;
-  while (not_done) {
-    memset(buffer, 0, sizeof(buffer));
-    ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
-    if (!strcmp(buffer, "done\n")) {
-        not_done = 0;
-        break;
-    }
-    else if (command == 0) {
-        fprintf(stderr, "[INFO]: pipe closed\n");
-        break;
-    } else if (command == -1) {
-        fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-        return 1;
-    }
-
-    buffer[command] = 0;
-    // fprintf(stdout, "%s\n", buffer);
-    ssize_t ret = write(out_fd, buffer, strlen(buffer));
-    if (ret < 0) {
-        fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-        return 1;
-    }
-  }  
-
+  buffer[command] = 0;
+  ssize_t ret = write(out_fd, buffer, strlen(buffer));
+  if (ret < 0) {
+    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
+    return 1;
+  }
   return 0;
 }
