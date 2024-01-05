@@ -173,6 +173,9 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
 
 int ems_quit(void) { 
   //TODO: close pipes
+  close(req_fd);
+  close(res_fd);
+  
   if (unlink(req_pipe) != 0) {
       fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
       return 1;
@@ -244,12 +247,28 @@ int ems_show(int out_fd, unsigned int event_id) {
   fprintf(stdout, "sent: %s\n", buffer);
 
   memset(buffer, 0, sizeof(buffer));
-  read_msg(res_fd, buffer);
+//   read_msg(res_fd, buffer);
 
-  if (atoi(buffer) != 0) {
-    fprintf(stdout, "Event not shown\n");
-    return 1;
-  }
+  while (1) {
+    memset(buffer, 0, sizeof(buffer));
+    ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
+    if (command == 0) {
+        fprintf(stderr, "[INFO]: pipe closed\n");
+        break;
+    } else if (command == -1) {
+        fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+        return 1;
+    }
+
+    buffer[command] = 0;
+    fputs(buffer, stdout);
+  }  
+
+
+//   if (atoi(buffer) != 0) {
+//     fprintf(stdout, "Event not shown\n");
+//     return 1;
+//   }
 
   return 0;
 }

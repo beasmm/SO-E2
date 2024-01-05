@@ -203,8 +203,6 @@ int main(int argc, char* argv[]) {
           break;
         
         case OP_RESERVE:
-          fprintf(stdout, "reserve\n");
-
           event_id = atoi(elements[1]);
           num_coords = strtoul(elements[2], &endptr, 10);
 
@@ -221,6 +219,7 @@ int main(int argc, char* argv[]) {
           break;
 
         case OP_SHOW:
+          fprintf(stdout, "show\n");
           event_id = atoi(elements[1]);
 
           ret = ems_show(resp, event_id);
@@ -255,7 +254,6 @@ int main(int argc, char* argv[]) {
   // }
 
   //TODO: Close Server
-  // free(elements);
   close(r_register_pipe);
   ems_terminate();
 }

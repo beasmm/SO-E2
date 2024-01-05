@@ -54,7 +54,6 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        fprintf(stdout, "Creating event...\n");
 
         if (ems_create(event_id, num_rows, num_columns)) fprintf(stderr, "Failed to create event\n");
         break;
@@ -66,7 +65,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-        
+
         if (ems_reserve(event_id, num_coords, xs, ys)) fprintf(stderr, "Failed to reserve seats\n");
         break;
 
@@ -121,4 +120,9 @@ int main(int argc, char* argv[]) {
         return 0;
     }
   }
+
+  close(in_fd);
+  close(out_fd);
+  ems_quit();
+  return 0;
 }
