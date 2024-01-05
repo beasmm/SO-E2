@@ -31,24 +31,6 @@ void send_msg(int tx, char const *str) {
     }
 }
 
-// void read_msg(int rx, char *buffer) {
-//     ssize_t ret = read(rx, buffer, BUFFER_SIZE - 1);
-
-//     if (ret == 0) {
-//         // ret == 0 indicates EOF
-//         fprintf(stderr, "[INFO]: pipe closed\n");
-//         exit(EXIT_FAILURE);
-//     } else if (ret == -1) {
-//         // ret == -1 indicates error
-//         fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-//         exit(EXIT_FAILURE);
-//     }
-
-//     fprintf(stderr, "[INFO]: received %zd B\n", ret);
-//     buffer[ret] = 0;
-//     fputs(buffer, stdout);
-// }
-
 void createPipes() {
   if (unlink(req_pipe) != 0 && errno != ENOENT) {
       fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
@@ -110,7 +92,6 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
   char server_pipe[BUFFER_SIZE];
   strcpy(server_pipe, "../"); 
   strcat(server_pipe, server_pipe_path);
-  fprintf(stdout, "server_pipe: %s\n", server_pipe);
 
   int tx = open(server_pipe, O_WRONLY);
   
@@ -127,7 +108,6 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
   strcat(buffer, resp_pipe_path);
   strcat(buffer, " \n");
   send_msg(tx, buffer);
-  close(tx);
 
   //Open pipe to receive session id
   int rx = open(server_pipe, O_RDONLY);
@@ -172,10 +152,6 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
 }
 
 int ems_quit(void) { 
-  //TODO: close pipes
-  close(req_fd);
-  close(res_fd);
-  
   if (unlink(req_pipe) != 0) {
       fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
       return 1;
@@ -185,7 +161,6 @@ int ems_quit(void) {
       fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
       return 1;
   }
-
   return 0;
 }
 
@@ -198,11 +173,7 @@ int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
   fprintf(stdout, "sent: %s\n", buffer);
   send_msg(req_fd, buffer);
 
-
-  fprintf(stdout, "response pipe: %s\n", resp_pipe);
-
 // wait for response
-  fprintf(stdout, "hello\n");
   read_msg(res_fd, buffer);
 
   if(atoi(buffer) != 0) {
@@ -247,12 +218,15 @@ int ems_show(int out_fd, unsigned int event_id) {
   fprintf(stdout, "sent: %s\n", buffer);
 
   memset(buffer, 0, sizeof(buffer));
-//   read_msg(res_fd, buffer);
-
-  while (1) {
+  int not_done = 1;
+  while (not_done) {
     memset(buffer, 0, sizeof(buffer));
     ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
-    if (command == 0) {
+    if (!strcmp(buffer, "done\n")) {
+        not_done = 0;
+        break;
+    }
+    else if (command == 0) {
         fprintf(stderr, "[INFO]: pipe closed\n");
         break;
     } else if (command == -1) {
@@ -261,14 +235,13 @@ int ems_show(int out_fd, unsigned int event_id) {
     }
 
     buffer[command] = 0;
-    fputs(buffer, stdout);
+    // fprintf(stdout, "%s\n", buffer);
+    ssize_t ret = write(out_fd, buffer, strlen(buffer));
+    if (ret < 0) {
+        fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
+        return 1;
+    }
   }  
-
-
-//   if (atoi(buffer) != 0) {
-//     fprintf(stdout, "Event not shown\n");
-//     return 1;
-//   }
 
   return 0;
 }
@@ -283,10 +256,30 @@ int ems_list_events(int out_fd) {
   memset(buffer, 0, sizeof(buffer));
   read_msg(res_fd, buffer);
 
-  if (atoi(buffer) != 0) {
-    fprintf(stdout, "Events not listed\n");
-    return 1;
-  }
+  int not_done = 1;
+  while (not_done) {
+    memset(buffer, 0, sizeof(buffer));
+    ssize_t command = read(res_fd, buffer, BUFFER_SIZE - 1);
+    if (!strcmp(buffer, "done\n")) {
+        not_done = 0;
+        break;
+    }
+    else if (command == 0) {
+        fprintf(stderr, "[INFO]: pipe closed\n");
+        break;
+    } else if (command == -1) {
+        fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+        return 1;
+    }
+
+    buffer[command] = 0;
+    // fprintf(stdout, "%s\n", buffer);
+    ssize_t ret = write(out_fd, buffer, strlen(buffer));
+    if (ret < 0) {
+        fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
+        return 1;
+    }
+  }  
 
   return 0;
 }

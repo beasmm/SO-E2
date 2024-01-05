@@ -141,7 +141,6 @@ int ems_reserve(unsigned int event_id, size_t num_seats, size_t* xs, size_t* ys)
   }
 
   for (size_t i = 0; i < num_seats; i++) {
-    fprintf(stdout, "Seat: %ld %ld\n", xs[i], ys[i]);
     if (xs[i] <= 0 || xs[i] > event->rows || ys[i] <= 0 || ys[i] > event->cols) {
       fprintf(stderr, "Seat out of bounds\n");
       pthread_mutex_unlock(&event->mutex);
@@ -205,8 +204,7 @@ int ems_show(int out_fd, unsigned int event_id) {
       char buffer[16];
       sprintf(buffer, "%u", event->data[seat_index(event, i, j)]);
 
-      ssize_t bytes_written = write(out_fd, buffer, strlen(buffer));
-      if (bytes_written == -1) {
+      if (print_str(out_fd, buffer)) {
         perror("Error writing to file descriptor");
         pthread_mutex_unlock(&event->mutex);
         return 1;
@@ -221,14 +219,14 @@ int ems_show(int out_fd, unsigned int event_id) {
       }
     }
 
-    ssize_t bytes_written = write(out_fd, "\n", 1);
-    if (bytes_written == -1) {
+    if (print_str(out_fd, "\n")) {
       perror("Error writing to file descriptor");
       pthread_mutex_unlock(&event->mutex);
       return 1;
     }
   }
 
+  print_str(out_fd, "done\n");
   pthread_mutex_unlock(&event->mutex);
   return 0;
 }
@@ -262,19 +260,19 @@ int ems_list_events(int out_fd) {
 
   while (1) {
     char buff[] = "Event: ";
-    // if (print_str(out_fd, buff)) {
-    //   perror("Error writing to file descriptor");
-    //   pthread_rwlock_unlock(&event_list->rwl);
-    //   return 1;
-    // }
+    if (print_str(out_fd, buff)) {
+      perror("Error writing to file descriptor");
+      pthread_rwlock_unlock(&event_list->rwl);
+      return 1;
+    }
 
     char id[16];
     sprintf(id, "%u\n", (current->event)->id);
-    // if (print_str(out_fd, id)) {
-    //   perror("Error writing to file descriptor");
-    //   pthread_rwlock_unlock(&event_list->rwl);
-    //   return 1;
-    // }
+    if (print_str(out_fd, id)) {
+      perror("Error writing to file descriptor");
+      pthread_rwlock_unlock(&event_list->rwl);
+      return 1;
+    }
 
     if (current == to) {
       break;
@@ -282,6 +280,8 @@ int ems_list_events(int out_fd) {
 
     current = current->next;
   }
+
+  print_str(out_fd, "done\n");
 
   pthread_rwlock_unlock(&event_list->rwl);
   return 0;

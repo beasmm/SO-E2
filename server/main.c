@@ -28,8 +28,8 @@ enum OP_TYPE getOperation (char* command) {
   if (!strcmp(command, "3")) return OP_CREATE;
   else if (!strcmp(command, "4")) return OP_RESERVE;
   else if (!strcmp(command, "5")) return OP_SHOW;
-  else if (!strcmp(command, "6")) return OP_LIST_EVENTS;
-  else if (!strcmp(command, "WAIT")) return OP_WAIT;
+  else if (!strcmp(command, "6\n")) return OP_LIST_EVENTS;
+  else if (!strcmp(command, "WAIT\n")) return OP_WAIT;
   else return OP_INVALID;
 }
 
@@ -102,14 +102,14 @@ int main(int argc, char* argv[]) {
   }
 
 
-  // while (1) {
-    //Read from pipe
+  while (1) {
     int r_register_pipe = open(pipe_name, O_RDONLY);
     if (r_register_pipe == -1) {
         fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
         return 1;
     }
     char buffer[BUFFER_SIZE];
+    //Read from pipe
     fprintf(stdout, "[INFO]: waiting for input\n");
     ssize_t ret = read(r_register_pipe, buffer, BUFFER_SIZE - 1);
     if (ret == 0) {
@@ -119,6 +119,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
         return 1;
     }
+    close(r_register_pipe);
 
     //TODO: Intialize server, create worker threads
     //how many do i need? and what functions do i need to call?
@@ -157,7 +158,7 @@ int main(int argc, char* argv[]) {
 
     close(tx);
 
-  // Open request pipe to read commands
+    // Open request pipe to read commands
     int rx = open(req_pipe, O_RDONLY);
     if (rx == -1) {
         fprintf(stderr, "[ERR]: open req failed: %s\n", strerror(errno));
@@ -190,6 +191,7 @@ int main(int argc, char* argv[]) {
       size_t num_rows, num_cols, num_coords;
       size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
 
+
       switch (getOperation(elements[0])) {
         case OP_CREATE:
           event_id = atoi(elements[1]);
@@ -219,13 +221,11 @@ int main(int argc, char* argv[]) {
           break;
 
         case OP_SHOW:
-          fprintf(stdout, "show\n");
           event_id = atoi(elements[1]);
 
           ret = ems_show(resp, event_id);
           if (ret != 0) fprintf(stderr, "Failed to show event\n");
-          else snprintf(response, sizeof(response), "%d\n", ret);
-
+          snprintf(response, sizeof(response), "%d\n", ret);
           break;
 
         case OP_LIST_EVENTS:
@@ -244,16 +244,19 @@ int main(int argc, char* argv[]) {
 
         case OP_INVALID:
           break;
+
+        default:
+          break;
       }
     
       send_msg(resp, response);
-      fprintf(stdout, "sent: %s\n", response);
 
     }
+    close(rx);
+    close(resp);
 
-  // }
+  }
 
   //TODO: Close Server
-  close(r_register_pipe);
   ems_terminate();
 }

@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
     switch (get_next(in_fd)) {
       case CMD_CREATE:
         if (parse_create(in_fd, &event_id, &num_rows, &num_columns) != 0) {
-          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          fprintf(stderr, "(create) Invalid command. See HELP for usage\n");
           continue;
         }
 
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
         num_coords = parse_reserve(in_fd, MAX_RESERVATION_SIZE, &event_id, xs, ys);
 
         if (num_coords == 0) {
-          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          fprintf(stderr, "(reserve) Invalid command. See HELP for usage\n");
           continue;
         }
 
@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
 
       case CMD_SHOW:
         if (parse_show(in_fd, &event_id) != 0) {
-          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          fprintf(stderr, "(show) Invalid command. See HELP for usage\n");
           continue;
         }
 
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
 
       case CMD_WAIT:
         if (parse_wait(in_fd, &delay, NULL) == -1) {
-            fprintf(stderr, "Invalid command. See HELP for usage\n");
+            fprintf(stderr, "(wait) Invalid command. See HELP for usage\n");
             continue;
         }
 
@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
         break;
 
       case CMD_INVALID:
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
+        fprintf(stderr, "(invalid) Invalid command. See HELP for usage\n");
         break;
 
       case CMD_HELP:
