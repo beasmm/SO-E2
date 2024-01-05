@@ -4,10 +4,15 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include "api.h"
 
 #define BUFFER_SIZE 1024
+#define ERROR -1
+
 int session_number = 0;
+int req_fd;
+int res_fd;
 char* req_pipe;
 char* resp_pipe;
 
@@ -16,7 +21,6 @@ void send_msg(int tx, char const *str) {
     size_t written = 0;
 
     while (written < len) {
-      fprintf(stdout, "writing: %s\n", str);
         ssize_t ret = write(tx, str + written, len - written);
         if (ret < 0) {
             fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
@@ -27,13 +31,31 @@ void send_msg(int tx, char const *str) {
     }
 }
 
+// void read_msg(int rx, char *buffer) {
+//     ssize_t ret = read(rx, buffer, BUFFER_SIZE - 1);
+
+//     if (ret == 0) {
+//         // ret == 0 indicates EOF
+//         fprintf(stderr, "[INFO]: pipe closed\n");
+//         exit(EXIT_FAILURE);
+//     } else if (ret == -1) {
+//         // ret == -1 indicates error
+//         fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+//         exit(EXIT_FAILURE);
+//     }
+
+//     fprintf(stderr, "[INFO]: received %zd B\n", ret);
+//     buffer[ret] = 0;
+//     fputs(buffer, stdout);
+// }
+
 void createPipes() {
   if (unlink(req_pipe) != 0 && errno != ENOENT) {
       fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
       return 1;
   }
 
-  if (mkfifo(req_pipe, 0640) != 0) {
+  if (mkfifo(req_pipe, 0666) != 0) {
       fprintf(stderr, "[ERR]: mkfifo failed: %s\n", strerror(errno));
       return 1;
   }
@@ -43,11 +65,41 @@ void createPipes() {
       return 1;
   }
 
-  if (mkfifo(resp_pipe, 0640) != 0) {
+  if (mkfifo(resp_pipe, 0666) != 0) {
       fprintf(stderr, "[ERR]: mkfifo failed: %s\n", strerror(errno));
       return 1;
   }
 
+}
+
+void closePipes() {
+  if (unlink(req_pipe) != 0) {
+      fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
+      return 1;
+  }
+
+  if (unlink(resp_pipe) != 0) {
+      fprintf(stderr, "[ERR]: unlink failed: %s\n", strerror(errno));
+      return 1;
+  }
+}
+
+void read_msg(int rx, char *buffer) {
+    ssize_t ret = read(rx, buffer, BUFFER_SIZE - 1);
+
+    if (ret == 0) {
+        // ret == 0 indicates EOF
+        fprintf(stderr, "[INFO]: pipe closed\n");
+        exit(EXIT_FAILURE);
+    } else if (ret == -1) {
+        // ret == -1 indicates error
+        fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(stderr, "[INFO]: received %zd B\n", ret);
+    buffer[ret] = 0;
+    fputs(buffer, stdout);
 }
 
 int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path) {
@@ -68,16 +120,16 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
   }
 
   createPipes();
-
   
   char buffer[BUFFER_SIZE];
   strcpy(buffer, req_pipe_path);
   strcat(buffer, " ");
   strcat(buffer, resp_pipe_path);
-  strcat(buffer, "\n");
+  strcat(buffer, " \n");
   send_msg(tx, buffer);
   close(tx);
 
+  //Open pipe to receive session id
   int rx = open(server_pipe, O_RDONLY);
   if (rx == -1) {
       fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
@@ -104,6 +156,18 @@ int ems_setup(char const* req_pipe_path, char const* resp_pipe_path, char const*
   session_number = atoi(buffer);
   close(rx);
 
+  req_fd = open(req_pipe, O_WRONLY);
+  if (req_fd == -1) {
+    fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
+    return 1;
+  }
+
+  res_fd = open(resp_pipe, O_RDONLY);
+  if (res_fd == -1) {
+    fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
+    return 1;
+  }
+
   return 0;
 }
 
@@ -124,34 +188,86 @@ int ems_quit(void) {
 
 int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
   //TODO: send create request to the server (through the request pipe) and wait for the response (through the response pipe)
-  int tx = open(req_pipe, O_WRONLY);
-  if (tx == -1) {
-      fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
-      return 1;
-  }
-  fprintf(stdout, "Opened request pipe\n");
 
   char buffer[BUFFER_SIZE];
   snprintf(buffer, sizeof(buffer), "3|%u|%ld|%ld\n", event_id, num_rows, num_cols);
 
   fprintf(stdout, "sent: %s\n", buffer);
-  send_msg(tx, buffer);
+  send_msg(req_fd, buffer);
 
-  close(tx);
+
+  fprintf(stdout, "response pipe: %s\n", resp_pipe);
+
+// wait for response
+  fprintf(stdout, "hello\n");
+  read_msg(res_fd, buffer);
+
+  if(atoi(buffer) != 0) {
+    fprintf(stdout, "Event not created\n");
+    return 1;
+  }
+
   return 0;
 }
 
 int ems_reserve(unsigned int event_id, size_t num_seats, size_t* xs, size_t* ys) {
   //TODO: send reserve request to the server (through the request pipe) and wait for the response (through the response pipe)
-  return 1;
+  char buffer[BUFFER_SIZE];
+  snprintf(buffer, sizeof(buffer), "4|%u|%ld", event_id, num_seats);
+
+  for (int i = 0; i < num_seats; i++) {
+    char temp[BUFFER_SIZE];
+    snprintf(temp, sizeof(temp), "|%ld|%ld", xs[i], ys[i]);
+    strcat(buffer, temp);
+  }
+  strcat(buffer, "\n");
+
+  fprintf(stdout, "sent: %s\n", buffer);
+  send_msg(req_fd, buffer);
+
+  memset(buffer, 0, sizeof(buffer));
+  read_msg(res_fd, buffer);
+
+  if (atoi(buffer) != 0) {
+    fprintf(stdout, "Seats not reserved\n");
+    return 1;
+  }
+
+  return 0;
 }
 
 int ems_show(int out_fd, unsigned int event_id) {
   //TODO: send show request to the server (through the request pipe) and wait for the response (through the response pipe)
-  return 1;
+   char buffer[BUFFER_SIZE];
+  snprintf(buffer, sizeof(buffer), "5|%u\n", event_id);
+  send_msg(req_fd, buffer);
+  fprintf(stdout, "sent: %s\n", buffer);
+
+  memset(buffer, 0, sizeof(buffer));
+  read_msg(res_fd, buffer);
+
+  if (atoi(buffer) != 0) {
+    fprintf(stdout, "Event not shown\n");
+    return 1;
+  }
+
+  return 0;
 }
 
 int ems_list_events(int out_fd) {
   //TODO: send list request to the server (through the request pipe) and wait for the response (through the response pipe)
-  return 1;
+    char buffer[BUFFER_SIZE];
+  snprintf(buffer, sizeof(buffer), "6\n");
+  send_msg(req_fd, buffer);
+  fprintf(stdout, "sent: %s\n", buffer);
+
+  memset(buffer, 0, sizeof(buffer));
+  read_msg(res_fd, buffer);
+
+  if (atoi(buffer) != 0) {
+    fprintf(stdout, "Events not listed\n");
+    return 1;
+  }
+
+  return 0;
 }

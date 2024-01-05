@@ -6,6 +6,7 @@
 
 #include "common/io.h"
 #include "eventlist.h"
+#include "operations.h"
 
 static struct EventList* event_list = NULL;
 static unsigned int state_access_delay_us = 0;
@@ -60,7 +61,6 @@ int ems_terminate() {
 }
 
 int ems_create(unsigned int event_id, size_t num_rows, size_t num_cols) {
-  fprintf(stdout, "boo boo\n");
   if (event_list == NULL) {
     fprintf(stderr, "EMS state must be initialized\n");
     return 1;
@@ -204,7 +204,8 @@ int ems_show(int out_fd, unsigned int event_id) {
       char buffer[16];
       sprintf(buffer, "%u", event->data[seat_index(event, i, j)]);
 
-      if (print_str(out_fd, buffer)) {
+      ssize_t bytes_written = write(out_fd, buffer, strlen(buffer));
+      if (bytes_written == -1) {
         perror("Error writing to file descriptor");
         pthread_mutex_unlock(&event->mutex);
         return 1;
@@ -219,11 +220,13 @@ int ems_show(int out_fd, unsigned int event_id) {
       }
     }
 
-    if (print_str(out_fd, "\n")) {
+    ssize_t bytes_written = write(out_fd, "\n", 1);
+    if (bytes_written == -1) {
       perror("Error writing to file descriptor");
       pthread_mutex_unlock(&event->mutex);
       return 1;
     }
+
   }
 
   pthread_mutex_unlock(&event->mutex);
@@ -246,7 +249,8 @@ int ems_list_events(int out_fd) {
 
   if (current == NULL) {
     char buff[] = "No events\n";
-    if (print_str(out_fd, buff)) {
+    ssize_t bytes_written = write(out_fd, buff, strlen(buff));
+    if (bytes_written == -1) {
       perror("Error writing to file descriptor");
       pthread_rwlock_unlock(&event_list->rwl);
       return 1;
@@ -258,19 +262,19 @@ int ems_list_events(int out_fd) {
 
   while (1) {
     char buff[] = "Event: ";
-    if (print_str(out_fd, buff)) {
-      perror("Error writing to file descriptor");
-      pthread_rwlock_unlock(&event_list->rwl);
-      return 1;
-    }
+    // if (print_str(out_fd, buff)) {
+    //   perror("Error writing to file descriptor");
+    //   pthread_rwlock_unlock(&event_list->rwl);
+    //   return 1;
+    // }
 
     char id[16];
     sprintf(id, "%u\n", (current->event)->id);
-    if (print_str(out_fd, id)) {
-      perror("Error writing to file descriptor");
-      pthread_rwlock_unlock(&event_list->rwl);
-      return 1;
-    }
+    // if (print_str(out_fd, id)) {
+    //   perror("Error writing to file descriptor");
+    //   pthread_rwlock_unlock(&event_list->rwl);
+    //   return 1;
+    // }
 
     if (current == to) {
       break;

@@ -11,18 +11,38 @@
 #include "common/constants.h"
 #include "common/io.h"
 #include "operations.h"
-#include "client/parser.h" //can i do this?
 
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 10
 
-enum Command getCommand(char* command) {
-  if (!strcmp(command, "CREATE")) return CMD_CREATE;
-  else if (!strcmp(command, "RESERVE")) return CMD_RESERVE;
-  else if (!strcmp(command, "SHOW")) return CMD_SHOW;
-  else if (!strcmp(command, "LIST")) return CMD_LIST_EVENTS;
-  else if (!strcmp(command, "WAIT")) return CMD_WAIT;
-  else return CMD_INVALID;
+enum OP_TYPE {
+  OP_CREATE,
+  OP_RESERVE,
+  OP_SHOW,
+  OP_LIST_EVENTS,
+  OP_WAIT,
+  OP_INVALID
+} op_type;
+
+enum OP_TYPE getOperation (char* command) {
+  if (!strcmp(command, "3")) return OP_CREATE;
+  else if (!strcmp(command, "4")) return OP_RESERVE;
+  else if (!strcmp(command, "5")) return OP_SHOW;
+  else if (!strcmp(command, "6")) return OP_LIST_EVENTS;
+  else if (!strcmp(command, "WAIT")) return OP_WAIT;
+  else return OP_INVALID;
+}
+
+char** seperateElements(char* command) {
+  char** elements = malloc(sizeof(char*) * 10);
+  char* token = strtok(command, "|");
+  int i = 0;
+  while (token != NULL) {
+    elements[i] = token;
+    i++;
+    token = strtok(NULL, "|");
+  }
+  return elements;
 }
 
 void send_msg(int tx, char const *str) {
@@ -35,7 +55,7 @@ void send_msg(int tx, char const *str) {
             fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
             exit(EXIT_FAILURE);
         }
-
+        fprintf(stdout, "sent: %s\n", str);
         written += ret;
     }
 }
@@ -81,25 +101,23 @@ int main(int argc, char* argv[]) {
       return 1;
   }
 
-  int r_register_pipe = open(pipe_name, O_RDONLY);
-  if (r_register_pipe == -1) {
-      fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
-      return 1;
-  }
 
   // while (1) {
     //Read from pipe
+    int r_register_pipe = open(pipe_name, O_RDONLY);
+    if (r_register_pipe == -1) {
+        fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
+        return 1;
+    }
     char buffer[BUFFER_SIZE];
     fprintf(stdout, "[INFO]: waiting for input\n");
     ssize_t ret = read(r_register_pipe, buffer, BUFFER_SIZE - 1);
     if (ret == 0) {
-        // ret == 0 indicates EOF
         fprintf(stderr, "[INFO]: pipe closed\n");
-        return 0;
+        return 1;
     } else if (ret == -1) {
-        // ret == -1 indicates error
         fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-        exit(EXIT_FAILURE);
+        return 1;
     }
 
     //TODO: Intialize server, create worker threads
@@ -112,7 +130,9 @@ int main(int argc, char* argv[]) {
 
     fprintf(stderr, "[INFO]: received %zd B\n", ret);
     buffer[ret] = 0;
-    // fputs(buffer, stdout); 
+    fputs(buffer, stdout); 
+
+    close(r_register_pipe);
 
     char req_pipe[BUFFER_SIZE];
     strcpy(req_pipe, "../client/");
@@ -121,36 +141,42 @@ int main(int argc, char* argv[]) {
     strcpy(resp_pipe, "../client/");
     strcat(resp_pipe, strtok(NULL, " "));
     
-    //TODO: Write new client to the producer-consumer buffer
 
     char response[BUFFER_SIZE];
     snprintf(response, sizeof(response), "%d", n_sessions);
     strcat(response, "\n");
     
+    //Open pipe to write the session id
     int tx = open(pipe_name, O_WRONLY);
     if (tx == -1) {
         fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    send_msg(tx, response);
+    send_msg(tx, response);   
     n_sessions++;
+
     close(tx);
 
+  // Open request pipe to read commands
     int rx = open(req_pipe, O_RDONLY);
     if (rx == -1) {
-        fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
+        fprintf(stderr, "[ERR]: open req failed: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    int resp = open(resp_pipe, O_WRONLY);
+    if (resp == -1) {
+        fprintf(stderr, "[ERR]: open resp failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
     while (1) {
-      fprintf(stdout, "read command\n");
+      memset(response, 0, sizeof(response));
       ssize_t command = read(rx, buffer, BUFFER_SIZE - 1);
       if (command == 0) {
-          // ret == 0 indicates EOF
           fprintf(stderr, "[INFO]: pipe closed\n");
           break;
       } else if (command == -1) {
-          // ret == -1 indicates error
           fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
           return 1;
       }
@@ -159,44 +185,77 @@ int main(int argc, char* argv[]) {
       buffer[command] = 0;
       fputs(buffer, stdout);
 
-      char* token = strtok(buffer, " ");
+      char** elements = seperateElements(buffer);
+      int event_id, ret;
+      size_t num_rows, num_cols, num_coords;
+      size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
 
-      switch (getCommand(token)) {
-        case CMD_CREATE:
-          int event_id = atoi(strtok(NULL, " "));
-          char *endptr;
-          size_t num_rows = strtoul(strtok(NULL, " "), &endptr, 10);
-          size_t num_cols = strtoul(strtok(NULL, "\n"), &endptr, 10);
+      switch (getOperation(elements[0])) {
+        case OP_CREATE:
+          event_id = atoi(elements[1]);
+          num_rows = strtoul(elements[2], &endptr, 10);
+          num_cols = strtoul(elements[3], &endptr, 10);
 
-          if (ems_create(event_id, num_rows, num_cols) != 0)
-            fprintf(stderr, "Failed to create event\n");
+          ret = ems_create(event_id, num_rows, num_cols);
+
+          if (ret != 0) fprintf(stderr, "Failed to create event\n");
+          snprintf(response, sizeof(response), "%d\n", ret);
           break;
         
-        case CMD_RESERVE:
-          event_id = atoi(strtok(NULL, " "));
-          size_t num_coords = 0;
-          size_t xs[MAX_RESERVATION_SIZE], ys[MAX_RESERVATION_SIZE];
-          char* token = strtok(NULL, " ");
-          while (token != NULL) {
-            xs[num_coords] = atoi(token);
-            ys[num_coords] = atoi(strtok(NULL, " "));
-            num_coords++;
-            token = strtok(NULL, " ");
+        case OP_RESERVE:
+          fprintf(stdout, "reserve\n");
+
+          event_id = atoi(elements[1]);
+          num_coords = strtoul(elements[2], &endptr, 10);
+
+          for (int i = 0; i < num_coords; i++) {
+            xs[i] = strtoul(elements[3 + 2*i], &endptr, 10);
+            ys[i] = strtoul(elements[4 + 2*i], &endptr, 10);
           }
 
-          if (ems_reserve(event_id, num_coords, xs, ys) != 0)
-            fprintf(stderr, "Failed to reserve seats\n");
+          ret = ems_reserve(event_id, num_coords, xs, ys);
+
+          if (ret != 0) fprintf(stderr, "Failed to reserve seats\n");
+          snprintf(response, sizeof(response), "%d\n", ret);
+
           break;
 
-        default:
+        case OP_SHOW:
+          event_id = atoi(elements[1]);
+
+          ret = ems_show(resp, event_id);
+          if (ret != 0) fprintf(stderr, "Failed to show event\n");
+          else snprintf(response, sizeof(response), "%d\n", ret);
+
+          break;
+
+        case OP_LIST_EVENTS:
+          ret = ems_list_events(resp);
+          if (ret != 0) fprintf(stderr, "Failed to list events\n");
+          snprintf(response, sizeof(response), "%d\n", ret);
+          break;
+        
+        case OP_WAIT:
+          unsigned int delay = strtoul(elements[1], &endptr, 10);
+          if (delay > 0) {
+            printf("Waiting...\n");
+            sleep(delay);
+          }
+          break;
+
+        case OP_INVALID:
           break;
       }
+    
+      send_msg(resp, response);
+      fprintf(stdout, "sent: %s\n", response);
 
     }
 
   // }
 
   //TODO: Close Server
+  // free(elements);
   close(r_register_pipe);
   ems_terminate();
 }

@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-
+        
         if (ems_reserve(event_id, num_coords, xs, ys)) fprintf(stderr, "Failed to reserve seats\n");
         break;
 
