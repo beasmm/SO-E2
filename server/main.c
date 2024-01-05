@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #include "common/constants.h"
 #include "common/io.h"
@@ -14,6 +15,14 @@
 
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 10
+
+int active_events[MAX_SESSIONS];
+int _index = 0;
+
+//SIG
+volatile sig_atomic_t sigurs1_detected = 0;
+int open_in_progress = 0;
+
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -25,6 +34,11 @@ typedef struct {
 
 Queue producer_consumer; 
 char pipe_name[BUFFER_SIZE];
+
+void signal_handler(int signum){
+  sigurs1_detected = 1;
+  while (open_in_progress) sleep(1000);
+}
 
 void initializeQueue() {
   producer_consumer.front = 0;
@@ -104,6 +118,13 @@ void send_msg(int tx, char const *str) {
 }
 
 void* executeRequest(void* arg) {
+  // Block SIGUSR1 in the worker threads
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGUSR1);
+  pthread_sigmask(SIG_BLOCK, &mask, NULL);
+
+
   char req_pipe[BUFFER_SIZE];
   char buffer[BUFFER_SIZE];
   strcpy(buffer, dequeue());
@@ -118,8 +139,9 @@ void* executeRequest(void* arg) {
   char response[BUFFER_SIZE];
   snprintf(response, sizeof(response), "%d", producer_consumer.count + 1);
   strcat(response, "\n");
-  
+
   //Open pipe to write the session id
+  open_in_progress = 1;
   int tx = open(pipe_name, O_WRONLY);
   if (tx == -1) {
       fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
@@ -227,6 +249,7 @@ void* executeRequest(void* arg) {
   close(rx);
   close(resp);
 
+  open_in_progress = 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -281,7 +304,20 @@ int main(int argc, char* argv[]) {
     }
   }
   //TODO; eventual locks
+  open_in_progress = 0;
   while (1) {
+    if (sigurs1_detected == 1){
+      fprintf(stdout, "SIGUSR1 detected. Now showing active events:\n");
+      for (int i = 0; i < MAX_SESSIONS; i++){
+        int id = active_events[_index];
+        if (id == -1) continue;
+        fprintf(stdout, "ID: %d. Current state of seats:\n", active_events[_index]);
+        char buf[BUFFER_SIZE];
+        ems_show(stdout, id, buf);
+        sigurs1_detected = 0;
+      }
+    }
+    open_in_progress = 1;
     int r_register_pipe = open(pipe_name, O_RDONLY);
     if (r_register_pipe == -1) {
         fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
@@ -293,12 +329,13 @@ int main(int argc, char* argv[]) {
     ssize_t ret = read(r_register_pipe, buffer, BUFFER_SIZE - 1);
     if (ret == 0) {
       close(r_register_pipe);
+      open_in_progress = 0;
       continue;
     } else if (ret == -1) {
       fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
       return 1;
     }
-
+    printf("cllo\n");
 
     fprintf(stderr, "[INFO]: received %zd B\n", ret);
     buffer[ret] = 0;
@@ -307,6 +344,7 @@ int main(int argc, char* argv[]) {
     enqueue(buffer);
 
     close(r_register_pipe);
+    open_in_progress = 0;
   }
 
   //TODO: Close Server
